@@ -177,6 +177,15 @@ esp_err_t esp_wireguard_remove_peer(wireguard_ctx_t* ctx, uint8_t *wireguard_pee
  */
 esp_err_t esp_wireguard_update_peer(wireguard_peer_config_t *peer_config, uint8_t wireguard_peer_index);
 
+/**
+ * @brief Update a peer in wireguard
+ *
+ * @param ip_addr Ip address of derp server to connect
+ * @return
+ *      - ESP_OK on success.
+ */
+esp_err_t esp_wireguard_update_derp(const char *ip_addr);
+
 #ifdef __cplusplus
 }
 #endif

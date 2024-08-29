@@ -15,6 +15,7 @@
 #include "esp_tls.h"
 #include "crypto.h"
 #include "sodium.h"
+// #include "wireguardif.h"
 
 #define WIREGUARDIF_TIMER_MSECS 400
 #define DERP_CONNECTION_TIMEOUT_TICKS 20
@@ -22,7 +23,7 @@
 #define TAG "derp" // TODO: fix log levels, as now only errors are printed
 
 // Certificate:
-const char *cacert =
+const unsigned char *cacert =
 "-----BEGIN CERTIFICATE-----\n"
 "MIIEijCCA3KgAwIBAgIQfU1CqStDHX5kU+fBmo1YdzANBgkqhkiG9w0BAQsFADBX\n"
 "MQswCQYDVQQGEwJCRTEZMBcGA1UEChMQR2xvYmFsU2lnbiBudi1zYTEQMA4GA1UE\n"
@@ -50,6 +51,12 @@ const char *cacert =
 "5bHoz7cYU27LUvh1n2WSNnC6/QwFSoP6gNKa4POO/oO13xjhrLRHJ/04cKMbRALt\n"
 "JWQkPacJ8SJVhB2R7BI=\n"
 "-----END CERTIFICATE-----";
+typedef struct {
+	char addr[INET_ADDRSTRLEN];
+	uint8_t len;
+} Ipv4Addr;
+static Ipv4Addr derp_ip = {0};
+static bool initiate_derp_reconnection = false;
 
 void derp_tick(struct wireguard_device *dev) {
 	err_t err = ESP_FAIL;
@@ -72,6 +79,10 @@ void derp_tick(struct wireguard_device *dev) {
 		//err = derp_shutdown_connection(dev);
 		//dev->derp.ticks_connecting = 0;
 		//ESP_LOGE(TAG, "Shutdown of DERP connection status, %d", err);
+	} else if (initiate_derp_reconnection) {
+		ESP_LOGE(TAG, "Initializing new DERP connection");
+		err = derp_initiate_new_connection(dev);
+		ESP_LOGE(TAG, "New DERP connection initiation status, %d", err);
 	}
 
 	if ((dev->derp.conn_state & CONN_STATE_TCP_DISCONNECTED) | (dev->derp.conn_state & CONN_STATE_DERP_READY)) {
@@ -185,8 +196,13 @@ end:
 
 static void derp_transmit_task(void *arg) {
 	struct wireguard_device *dev = (struct wireguard_device *)arg;
-	uint8_t *read_buf = NULL;
+	char *read_buf = NULL;
 	int err = ESP_FAIL;
+
+	if (!derp_ip.len) {
+		ESP_LOGE(TAG, "No DERP server set");
+		goto ret;
+	}
 
 	ESP_LOGE(TAG, "Allocating new socket");
 	dev->derp.tls = esp_tls_init();
@@ -203,8 +219,7 @@ static void derp_transmit_task(void *arg) {
 	tls_cfg.skip_common_name = true;
 
 	// Try to establish TLS connection
-	const char *derp_ip = "149.88.19.146"; // TODO: make configurable
-	err = esp_tls_conn_new_sync(derp_ip, strlen(derp_ip), 8765, &tls_cfg, dev->derp.tls);
+	err = esp_tls_conn_new_sync(derp_ip.addr, derp_ip.len, 8765, &tls_cfg, dev->derp.tls);
 	if (err == -1) {
 		ESP_LOGE(TAG, "Failed to attempt TLS connection address %d", err);
 		goto ret;
@@ -212,14 +227,15 @@ static void derp_transmit_task(void *arg) {
 	ESP_LOGE(TAG, "Connection Established!");
 
 	dev->derp.conn_state = CONN_STATE_TCP_CONNECTING;
-
+	char http_req[128];
 	// Prepare HTTP upgrade request
-	const char * http_req =
-		"GET /derp HTTP/1.1\r\n"
-		"Host: 149.88.19.146\r\n"
-		"Connection: Upgrade\r\n"
-		"Upgrade: WebSocket\r\n"
-		"User-Agent: esp32/v1.0.0 esp\r\n\r\n";
+    snprintf(http_req, 128,
+        "GET /derp HTTP/1.1\r\n"
+	    "Host: %s\r\n"
+        "Connection: Upgrade\r\n"
+        "Upgrade: WebSocket\r\n"
+        "User-Agent: esp32/v1.0.0 esp\r\n\r\n",
+        derp_ip.addr);
 	err = esp_tls_conn_write(dev->derp.tls, http_req, strlen(http_req));
 	if (err < 0) {
 		ESP_LOGE(TAG, "Failed to send HTTP upgrade request %d", err);
@@ -250,14 +266,14 @@ static void derp_transmit_task(void *arg) {
 	ESP_LOGE(TAG, "Server has switched protocols");
 
 	// Verify length of the response
-	uint8_t *http_resp_end = strstr(read_buf, "\r\n\r\n");
+	char *http_resp_end = strstr(read_buf, "\r\n\r\n");
 	if (http_resp_end == NULL) {
 		ESP_LOGE(TAG, "HTTP response end not found");
 		goto ret;
 	}
 	http_resp_end += 4;
 
-	size_t http_resp_len = http_resp_end - (uint8_t *)read_buf;
+	size_t http_resp_len = http_resp_end - read_buf;
 	if (read_len - http_resp_len < 45) {
 		ESP_LOGE(TAG, "Server Key packet too short %d", http_resp_len);
 		goto ret;
@@ -281,7 +297,7 @@ static void derp_transmit_task(void *arg) {
 
 	ESP_LOGE(TAG, "Attempting to encrypt the plaintext for client-key");
 	err = crypto_box_easy(client_key_pkt.client_key.ciphertext,
-			plaintext, strlen(plaintext),
+			(const unsigned char*) plaintext, strlen(plaintext),
 			client_key_pkt.client_key.nonce,
 			server_key_pkt->server_key.server_public_key,
 			dev->private_key);
@@ -305,7 +321,7 @@ static void derp_transmit_task(void *arg) {
 	}
 	struct derp_pkt *serverInfo = read_buf;
 	if (serverInfo->type != 3) {
-		ESP_LOGE(TAG, "Unexpected packet during DERP handshake %s", serverInfo->type);
+		ESP_LOGE(TAG, "Unexpected packet during DERP handshake %d", serverInfo->type);
 		goto ret;
 	}
 
@@ -326,8 +342,15 @@ ret:
 	vTaskDelete(NULL);
 }
 
+void update_derp_ip(const char* ip) {
+	derp_ip.len = strlen(ip);
+	memcpy(derp_ip.addr, ip, derp_ip.len);
+	derp_ip.addr[derp_ip.len] = '\0';
+	initiate_derp_reconnection = true;
+}
+
 err_t derp_initiate_new_connection(struct wireguard_device *dev) {
-	err_t err = ESP_FAIL;
+	// err_t err = ESP_FAIL;
 	LWIP_ASSERT("derp_tick: invalid state", dev->derp.conn_state == CONN_STATE_TCP_DISCONNECTED);
 	LWIP_ASSERT("derp_initiate_new_connection: invalid state", dev->derp.tls == NULL);
 
@@ -351,7 +374,7 @@ err_t derp_shutdown_connection(struct wireguard_device *dev) {
 
 
 err_t derp_send_packet(struct wireguard_device *dev, struct wireguard_peer *peer, struct pbuf *payload) {
-	err_t err = ESP_FAIL;
+	// err_t err = ESP_FAIL;
 
 	if (dev->derp.conn_state != CONN_STATE_DERP_READY) {
 		ESP_LOGE(TAG, "Requested to transmit packet while DERP is not ready. Dropping");
@@ -367,7 +390,7 @@ err_t derp_send_packet(struct wireguard_device *dev, struct wireguard_peer *peer
 	}
 
 	packet->type = 0x04; // SendPacket type
-	packet->length_be = BE32_TO_LE32(WIREGUARD_PUBLIC_KEY_LEN + 1 + payload->tot_len);
+	packet->length_be = BE32_TO_LE32((WIREGUARD_PUBLIC_KEY_LEN + 1 + payload->tot_len));
 	memcpy(packet->data.peer_public_key, peer->public_key, WIREGUARD_PUBLIC_KEY_LEN);
 	packet->data.subtype = 0x00;
 	pbuf_copy_partial(payload, packet->data.data, payload->tot_len, 0);
@@ -377,7 +400,7 @@ err_t derp_send_packet(struct wireguard_device *dev, struct wireguard_peer *peer
 		ESP_LOGE(TAG, "Worker busy -> dropping packet");
 	}
 
-cleanup:
+// cleanup:
 	return ESP_OK;
 }
 
