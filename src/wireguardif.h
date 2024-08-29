@@ -38,6 +38,7 @@
 extern "C" {
 #endif
 
+#include <lwip/udp.h>
 #include "lwip/arch.h"
 #include "lwip/netif.h"
 #include "lwip/ip_addr.h"
@@ -138,7 +139,7 @@ err_t wireguardif_peer_is_up(struct netif *netif, u8_t peer_index);
 err_t wireguardif_update_peer(struct netif *netif, struct wireguardif_peer *peer, uint8_t wireguard_peer_index);
 
 // Recieves packet from network
-// void wireguardif_network_rx(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, u16_t port);
+void wireguardif_network_rx(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, u16_t port);
 
 #ifdef __cplusplus
 }

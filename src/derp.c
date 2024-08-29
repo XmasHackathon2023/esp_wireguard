@@ -15,7 +15,7 @@
 #include "esp_tls.h"
 #include "crypto.h"
 #include "sodium.h"
-// #include "wireguardif.h"
+#include "wireguardif.h"
 
 #define WIREGUARDIF_TIMER_MSECS 400
 #define DERP_CONNECTION_TIMEOUT_TICKS 20
@@ -23,7 +23,7 @@
 #define TAG "derp" // TODO: fix log levels, as now only errors are printed
 
 // Certificate:
-const unsigned char *cacert =
+const char *cacert =
 "-----BEGIN CERTIFICATE-----\n"
 "MIIEijCCA3KgAwIBAgIQfU1CqStDHX5kU+fBmo1YdzANBgkqhkiG9w0BAQsFADBX\n"
 "MQswCQYDVQQGEwJCRTEZMBcGA1UEChMQR2xvYmFsU2lnbiBudi1zYTEQMA4GA1UE\n"
@@ -120,7 +120,7 @@ end:
 }
 
 static void read_from_network_worker(void *arg) {
-	int err = ESP_FAIL;
+	// int err = ESP_FAIL;
 	struct wireguard_device *dev = (struct wireguard_device *)arg;
 	size_t max_data_pkt_size = 2048;
 	struct derp_pkt *data_pkt = mem_malloc(max_data_pkt_size);
@@ -154,7 +154,7 @@ static void read_from_network_worker(void *arg) {
 		}
 
 		// Data packet:
-		uint16_t offset = 0;
+		// uint16_t offset = 0;
 		struct pbuf data;
 		data.payload = data_pkt->data.data;
 		data.tot_len = read_len - offsetof(struct derp_pkt, data.data);
@@ -162,7 +162,7 @@ static void read_from_network_worker(void *arg) {
 
 		// Always use localhost address
 		struct ip_addr addr = {0};
-		err = ipaddr_aton("127.0.0.1", &addr);
+		ipaddr_aton("127.0.0.1", &addr);
 
 		// Find which peer packet is being sent,
 		// we will assign port according to this
@@ -214,7 +214,7 @@ static void derp_transmit_task(void *arg) {
 
 	// Prepare TLS configuration
 	esp_tls_cfg_t tls_cfg = {0};
-	tls_cfg.cacert_buf = cacert;
+	tls_cfg.cacert_buf = (unsigned char*) cacert;
 	tls_cfg.cacert_bytes = strlen(cacert) + 1;
 	tls_cfg.skip_common_name = true;
 
@@ -279,7 +279,7 @@ static void derp_transmit_task(void *arg) {
 		goto ret;
 	}
 
-	struct derp_pkt *server_key_pkt = http_resp_end;
+	struct derp_pkt *server_key_pkt = (struct derp_pkt*) http_resp_end;
 	ESP_LOGE(TAG, "ServerKey received");
 
 	//TODO: Validate that the server key is in
@@ -319,7 +319,7 @@ static void derp_transmit_task(void *arg) {
 		ESP_LOGE(TAG, "Failed to receive ServerInfo message %d", err);
 		goto ret;
 	}
-	struct derp_pkt *serverInfo = read_buf;
+	struct derp_pkt *serverInfo = (struct derp_pkt*)read_buf;
 	if (serverInfo->type != 3) {
 		ESP_LOGE(TAG, "Unexpected packet during DERP handshake %d", serverInfo->type);
 		goto ret;
