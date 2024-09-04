@@ -271,8 +271,8 @@ static void wireguardif_process_data_message(struct wireguard_device *device, st
 	size_t src_len;
 	struct pbuf *pbuf;
 	struct ip_hdr *iphdr;
-	ip_addr_t dest;
-	bool dest_ok = false;
+	ip_addr_t hdr_src;
+	bool src_ok = false;
 	int x;
 	uint32_t now;
 	uint16_t header_len = 0xFFFF;
@@ -328,11 +328,11 @@ static void wireguardif_process_data_message(struct wireguard_device *device, st
 							// Also check packet length!
 #if LWIP_IPV4
 							if (IPH_V(iphdr) == 4) {
-								ip_addr_copy_from_ip4(dest, iphdr->src);
+								ip_addr_copy_from_ip4(hdr_src, iphdr->src);
 								for (x=0; x < WIREGUARD_MAX_SRC_IPS; x++) {
 									if (peer->allowed_source_ips[x].valid) {
-										if (ip_addr_netcmp(&dest, &peer->allowed_source_ips[x].ip, ip_2_ip4(&peer->allowed_source_ips[x].mask))) {
-											dest_ok = true;
+										if (ip_addr_netcmp(&hdr_src, &peer->allowed_source_ips[x].ip, ip_2_ip4(&peer->allowed_source_ips[x].mask))) {
+											src_ok = true;
 											header_len = PP_NTOHS(IPH_LEN(iphdr));
 											break;
 										}
@@ -344,13 +344,13 @@ static void wireguardif_process_data_message(struct wireguard_device *device, st
 							if (IPH_V(iphdr) == 6) {
 								// TODO: IPV6 support for route filtering
 								header_len = PP_NTOHS(IPH_LEN(iphdr));
-								dest_ok = true;
+								src_ok = true;
 							}
 #endif /* LWIP_IPV6 */
 							if (header_len <= pbuf->tot_len) {
 
 								// 5. If the plaintext packet has not been dropped, it is inserted into the receive queue of the wg0 interface.
-								if (dest_ok) {
+								if (src_ok) {
 									// Send packet to be process by LWIP
 									ip_input(pbuf, device->netif);
 									// pbuf is owned by IP layer now
