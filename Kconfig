@@ -7,6 +7,8 @@ choice WIREGUARD_ESP_ADAPTER_SELECTION
         bool "TCP/IP Adapter (pre esp-idf v4.1, ESP8266 RTOS SDK)"
     config WIREGUARD_ESP_NETIF
         bool "ESP-NETIF"
+    config WIREGUARD_ESP_NETIF_ETHERNET
+        bool "ESP-NETIF ETHERNET"
 endchoice
 
 config WIREGUARD_MAX_PEERS
