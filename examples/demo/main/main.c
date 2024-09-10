@@ -49,9 +49,8 @@ static EventGroupHandle_t s_wifi_event_group;
 static const char *TAG = "demo";
 static int s_retry_num = 0;
 static wireguard_config_t wg_config = ESP_WIREGUARD_CONFIG_DEFAULT();
-static wireguard_peer_config_t peer_config = ESP_WIREGUARD_PEER_CONFIG_DEFAULT();
-static uint8_t wireguard_peer_index[WG_MAX_PEERS] = {WIREGUARD_INVALID_PEER};
-
+static wireguard_peer_config_t peer_one_config = ESP_WIREGUARD_PEER_CONFIG_DEFAULT();
+static wireguard_peer_config_t peer_two_config = ESP_WIREGUARD_PEER_CONFIG_DEFAULT();
 
 static esp_err_t wireguard_setup(wireguard_ctx_t *ctx)
 {
@@ -437,8 +436,8 @@ void app_main(void)
     ESP_LOGI(TAG, "Disconnected peer 1");
 
     vTaskDelay(1000 * 10 / portTICK_PERIOD_MS);
-    ESP_LOGI(TAG, "Connecting.");
-    err = esp_wireguard_add_peer(&ctx, &peer_config);
+    ESP_LOGI(TAG, "Connecting peer 1");
+    err = esp_wireguard_add_peer(&ctx, &peer_one_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_wireguard_connect: %s", esp_err_to_name(err));
         goto fail;
