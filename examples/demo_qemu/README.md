@@ -8,7 +8,7 @@ All services are managed and spun up with Docker Compose.
 
 - **Platform**: ESP-IDF
 - **Virtualization**: QEMU 
-- **Network Interface**: OpenCores Ethernet emulated via QEMU
+- **Network Interface**: (OpenCores Ethernet emulated)[https://github.com/espressif/esp-toolchain-docs/blob/main/qemu/esp32/README.md#ethernet-support] via QEMU
 - **Dockerized**: Using Docker Compose for container orchestration
 - **Containers**:
   - `esp_wireguard`: ESP WireGuard peer running in a QEMU emulator
@@ -30,7 +30,7 @@ There is no need to set-up Wireguard configuration details as they defined alrea
 ### Docker Compose
 In the root directory of the repository run following command:
 
-`docker-compose up --build -d`
+`docker compose up --build -d`
 
 To check the logs of esp_wireguard container:
 `docker logs esp_wireguard`
@@ -42,11 +42,4 @@ To check the logs of esp_wireguard container:
 `wireguard_peer2`
 
 To stop and remove the containers:
-`docker-compose down`
-
-
-
-
-
-
-
+`docker compose down`
